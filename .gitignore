@@ -193,4 +193,4 @@ cython_debug/
 .cursorignore
 .cursorindexingignore
 
-./gsheets_format/fab_tournament_data
+.fab_tournament_data
