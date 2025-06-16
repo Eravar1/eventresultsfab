@@ -28,9 +28,12 @@ This tool collects data from the coverage page of Flesh and Blood (FAB) tourname
 If it doesn't work, please run cmd as administrator and run the command again.
 
 ### Operation
-Run the script:
+Run the scripts one at a time:
     ```bash
-    python eventresultsfab.py
+    python gsheets_format/main.py
+    python analysis_tools/fab_matchup_analysis.py
+    python analysis_tools/fab_meta_analysis.py
+
 
 When prompted, enter the tournament results page URL (e.g., https://fabtcg.com/en/coverage/event-name/results/)
 
