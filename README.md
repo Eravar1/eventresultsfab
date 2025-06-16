@@ -25,12 +25,18 @@ This tool collects data from the coverage page of Flesh and Blood (FAB) tourname
    ```bash
    pip install requests beautifulsoup4 pandas
 
+If it doesn't work, please run cmd as administrator and run the command again.
+
 ### Operation
 Run the script:
     ```bash
     python eventresultsfab.py
 
 When prompted, enter the tournament results page URL (e.g., https://fabtcg.com/en/coverage/event-name/results/)
+
+This can be retrieved via the coverage page. Each page is numbered according to the round, so just pick any match results page and remove the round number. 
+
+i.e. https://fabtcg.com/en/coverage/calling-bologna-2025/, the first result page is https://fabtcg.com/en/coverage/calling-bologna-2025/results/1/, just remove the 1/ at the back.
 
 The tool will automatically:
 
