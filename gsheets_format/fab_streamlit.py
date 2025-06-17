@@ -36,29 +36,6 @@ if 'multi_df' not in st.session_state:
     st.session_state.multi_df = []
 if 'tournament_names' not in st.session_state:
     st.session_state.tournament_names = []
-if 'dark_mode' not in st.session_state:
-    st.session_state.dark_mode = False
-
-# ============== STYLING ==============
-def apply_style(dark):
-    if dark:
-        st.markdown("""
-        <style>
-            :root {--primary-color: #ff4b4b;}
-            .main {background-color: #0e1117;}
-            .sidebar .sidebar-content {background-color: #1a1d24;}
-            .stDataFrame {background-color: #1a1d24;}
-            .stProgress > div > div {background-color: #ff4b4b;}
-        </style>
-        """, unsafe_allow_html=True)
-    else:
-        st.markdown("""
-        <style>
-            :root {--primary-color: #ff4b4b;}
-            .main {background-color: #f8f9fa;}
-            .stProgress > div > div {background-color: #ff4b4b;}
-        </style>
-        """, unsafe_allow_html=True)
 
 # ============== VISUALIZATIONS ==============
 def plot_hero_performance(df):
@@ -100,7 +77,7 @@ def plot_matchup_heatmap(df, key_suffix=""):
         min_value=1, 
         max_value=20, 
         value=5,
-        key=f"heatmap_slider_{key_suffix}"  # Add unique suffix
+        key=f"heatmap_slider_{key_suffix}"
     )
     
     filtered = df['4_hero_matchups'][
@@ -277,6 +254,7 @@ def plot_aggregated_analysis():
                 use_container_width=True,
                 height=400
             )
+
 # ============== CORE FUNCTIONS ==============
 def analyze_tournament(url):
     with st.spinner(f"Scraping {url.split('/')[-3].replace('-',' ').title()}..."):
@@ -315,14 +293,6 @@ def main():
     # ===== SIDEBAR CONTROLS =====
     with st.sidebar:
         st.header("⚙️ Controls")
-        
-        # Dark Mode Toggle
-        st.session_state.dark_mode = st.toggle(
-            "Dark Mode",
-            value=st.session_state.dark_mode,
-            key="dark_mode_toggle"
-        )
-        apply_style(st.session_state.dark_mode)
         
         # Single Tournament Analysis
         st.subheader("Single Tournament")
@@ -425,7 +395,8 @@ def main():
                 st.dataframe(combined, use_container_width=True, height=400)
 
     with tab3:
-        plot_aggregated_analysis()  # New tab content
+        plot_aggregated_analysis()
+
     # Debug footer
     st.sidebar.markdown("---")
     st.sidebar.caption(f"v{datetime.now().strftime('%Y.%m.%d')} | Python {sys.version.split()[0]}")
