@@ -11,7 +11,7 @@ import sys
 
 # ============== CONFIGURATION ==============
 st.set_page_config(
-    page_title="FaB Tournament Analyzer Pro",
+    page_title="FaB Tournament Analyzer",
     layout="wide",
     initial_sidebar_state="expanded"
 )
