@@ -1,12 +1,17 @@
 import streamlit as st
 from main import scrape_round, process_data
 import pandas as pd
+import numpy as np
 import matplotlib.pyplot as plt
 import seaborn as sns
 import json
 import sys
 from datetime import datetime
 from concurrent.futures import ThreadPoolExecutor
+from collections import defaultdict
+import plotly.express as px
+import plotly.graph_objects as go
+from plotly.subplots import make_subplots
 
 # ============== CONFIGURATION ==============
 st.set_page_config(
@@ -20,7 +25,8 @@ st.set_page_config(
 def cached_scrape(url, round_num):
     try:
         return scrape_round(url, round_num)
-    except:
+    except Exception as e:
+        st.warning(f"Error in Round {round_num}: {str(e)}")
         return None
 
 @st.cache_data(ttl=3600)
@@ -34,6 +40,8 @@ if 'multi_df' not in st.session_state:
     st.session_state.multi_df = []
 if 'dark_mode' not in st.session_state:
     st.session_state.dark_mode = False
+if 'tournament_name' not in st.session_state:
+    st.session_state.tournament_name = ""
 
 # ============== STYLING ==============
 def apply_style(dark):
@@ -60,127 +68,101 @@ def apply_style(dark):
         </style>
         """, unsafe_allow_html=True)
 
-# ============== VISUALIZATION FUNCTIONS ==============
-def show_matchup_analysis(data):
-    st.header("⚔️ Matchup Analysis")
+# ============== ENHANCED VISUALIZATIONS ==============
+def plot_hero_performance(df):
+    hero_stats = df['3_hero_stats'].sort_values('Win Rate (%)', ascending=False)
     
+    fig = make_subplots(rows=1, cols=2, subplot_titles=("Win Rate", "Play Rate"))
+    
+    fig.add_trace(
+        go.Bar(
+            x=hero_stats['Hero'],
+            y=hero_stats['Win Rate (%)'],
+            name="Win Rate",
+            marker_color='#1f77b4'
+        ),
+        row=1, col=1
+    )
+    
+    fig.add_trace(
+        go.Bar(
+            x=hero_stats['Hero'],
+            y=hero_stats['Total Matches'],
+            name="Play Rate",
+            marker_color='#ff7f0e'
+        ),
+        row=1, col=2
+    )
+    
+    fig.update_layout(
+        height=500,
+        showlegend=False,
+        margin=dict(l=50, r=50, b=100, t=50, pad=4)
+    )
+    
+    st.plotly_chart(fig, use_container_width=True)
+
+def plot_matchup_heatmap(df):
     min_matches = st.slider(
         "Minimum matches to display", 
         min_value=1, 
         max_value=20, 
         value=5,
-        key="matchup_slider"
+        key="heatmap_slider"
     )
     
-    filtered = data['4_hero_matchups'][
-        data['4_hero_matchups']['Total Matches'] >= min_matches
+    filtered = df['4_hero_matchups'][
+        df['4_hero_matchups']['Total Matches'] >= min_matches
     ]
     
-    col1, col2 = st.columns(2)
+    heatmap_data = filtered.pivot_table(
+        values='Win Rate (%)',
+        index='Hero',
+        columns='Opponent Hero',
+        aggfunc='mean'
+    )
     
-    with col1:
-        st.subheader("Most Polarized Matchups")
-        polarized = filtered[
-            (filtered['Win Rate (%)'] >= 60) | 
-            (filtered['Win Rate (%)'] <= 40)
-        ].sort_values('Win Rate (%)', ascending=False)
-        
-        st.dataframe(
-            polarized[['Hero', 'Opponent Hero', 'Win Rate (%)', 'Total Matches']],
-            use_container_width=True
-        )
+    fig = go.Figure(data=go.Heatmap(
+        z=heatmap_data.values,
+        x=heatmap_data.columns,
+        y=heatmap_data.index,
+        colorscale='RdBu',
+        zmid=50,
+        text=heatmap_data.values.round(1),
+        hoverinfo="x+y+z"
+    ))
     
-    with col2:
-        st.subheader("Matchup Heatmap")
-        try:
-            heatmap_data = filtered.pivot_table(
-                values='Win Rate (%)',
-                index='Hero',
-                columns='Opponent Hero',
-                aggfunc='mean'
-            )
-            
-            fig, ax = plt.subplots(figsize=(12, 10))
-            sns.heatmap(
-                heatmap_data,
-                annot=True,
-                cmap='coolwarm',
-                center=50,
-                fmt='.1f',
-                linewidths=0.5,
-                ax=ax
-            )
-            st.pyplot(fig)
-        except Exception as e:
-            st.warning(f"Couldn't generate heatmap: {str(e)}")
+    fig.update_layout(
+        height=800,
+        title="Hero Matchup Win Rates (%)",
+        xaxis_title="Opponent Hero",
+        yaxis_title="Hero",
+        margin=dict(l=100, r=50, b=150, t=50)
+    )
+    
+    st.plotly_chart(fig, use_container_width=True)
 
-def plot_comparison_chart(metric):
-    fig, ax = plt.subplots(figsize=(12, 6))
+def plot_player_performance(df):
+    player_stats = df['2_player_stats'].sort_values('Win Rate (%)', ascending=False).head(20)
     
-    for i, df in enumerate(st.session_state.multi_df):
-        hero_stats = df['3_hero_stats']
-        tournament_name = st.session_state.tournament_names[i]
-        
-        top_hero = hero_stats.nlargest(5, metric)
-        sns.barplot(
-            x='Hero',
-            y=metric,
-            data=top_hero,
-            label=tournament_name,
-            alpha=0.7,
-            ax=ax
-        )
+    fig = px.bar(
+        player_stats,
+        x='Player',
+        y='Win Rate (%)',
+        color='Wins',
+        hover_data=['Wins', 'Losses', 'Heroes Used'],
+        color_continuous_scale='Viridis'
+    )
     
-    ax.set_title(f"Top Heroes by {metric} Across Tournaments")
-    ax.legend()
-    st.pyplot(fig)
-
-def render_hero_analysis():
-    st.header("📊 Hero Performance")
+    fig.update_layout(
+        height=600,
+        title="Top Players by Win Rate",
+        xaxis_title="Player",
+        yaxis_title="Win Rate (%)",
+        margin=dict(l=50, r=50, b=150, t=50)
+    )
     
-    tab1, tab2 = st.tabs(["Single Tournament", "Multi-Tournament"])
-    
-    with tab1:
-        if st.session_state.df:
-            hero_stats = st.session_state.df['3_hero_stats']
-            
-            col1, col2 = st.columns(2)
-            with col1:
-                st.metric("Total Matches", st.session_state.match_count)
-            
-            with col2:
-                top_hero = hero_stats.nlargest(1, 'Win Rate (%)')
-                st.metric("Top Win Rate", 
-                         f"{top_hero['Win Rate (%)'].values[0]}%",
-                         top_hero['Hero'].values[0])
-            
-            st.dataframe(
-                hero_stats.sort_values('Win Rate (%)', ascending=False),
-                use_container_width=True,
-                height=400
-            )
-    
-    with tab2:
-        if len(st.session_state.multi_df) > 1:
-            metric = st.selectbox(
-                "Comparison Metric",
-                ['Win Rate (%)', 'Total Matches', 'Wins'],
-                key="metric_selector"
-            )
-            plot_comparison_chart(metric)
-            
-            st.dataframe(
-                pd.concat([
-                    df['3_hero_stats'].assign(Tournament=name)
-                    for df, name in zip(
-                        st.session_state.multi_df,
-                        st.session_state.tournament_names
-                    )
-                ]),
-                use_container_width=True
-            )
-        else:
-            st.info("Add more tournaments to enable comparison")
+    st.plotly_chart(fig, use_container_width=True)
 
 # ============== CORE FUNCTIONS ==============
 def analyze_tournament(url):
@@ -189,7 +171,7 @@ def analyze_tournament(url):
         status_text = st.empty()
         all_rounds = []
         
-        with ThreadPoolExecutor() as executor:
+        with ThreadPoolExecutor(max_workers=5) as executor:
             futures = []
             for round_num in range(1, 21):
                 futures.append(executor.submit(cached_scrape, url, round_num))
@@ -208,7 +190,11 @@ def analyze_tournament(url):
             st.error(f"No data found for {url}")
             return None
         
-        return cached_process(all_rounds)
+        tournament_name = url.split('/')[-3].replace('-', ' ').title()
+        st.session_state.tournament_name = tournament_name
+        
+        with st.spinner("Analyzing matches..."):
+            return cached_process(all_rounds)
 
 # ============== MAIN APP ==============
 def main():
@@ -226,53 +212,20 @@ def main():
         )
         apply_style(st.session_state.dark_mode)
         
-        # Single Tournament Analysis
-        st.subheader("Single Tournament")
+        # Tournament Analysis
+        st.subheader("Tournament Analysis")
         url = st.text_input(
             "Enter URL:",
             "https://fabtcg.com/en/coverage/calling-bologna-2025/results/",
-            key="single_url"
+            key="tournament_url"
         )
         
-        if st.button("Analyze", key="analyze_single"):
+        if st.button("Analyze Tournament", key="analyze_tournament"):
             result = analyze_tournament(url)
             if result is not None:
                 st.session_state.df = result
                 st.session_state.match_count = len(result['1_match_results'])
                 st.success("Analysis complete!")
-        
-        # Multi-Tournament Comparison
-        st.subheader("Multi-Tournament")
-        multi_urls = st.text_area(
-            "Enter URLs (one per line):",
-            height=100,
-            key="multi_urls"
-        )
-        
-        if st.button("Compare Tournaments", key="analyze_multi"):
-            urls = [u.strip() for u in multi_urls.split('\n') if u.strip()]
-            st.session_state.multi_df = []
-            st.session_state.tournament_names = []
-            
-            progress_text = st.empty()
-            progress_bar = st.progress(0)
-            
-            for i, url in enumerate(urls):
-                progress_text.text(f"Processing {i+1}/{len(urls)}")
-                progress_bar.progress((i + 1) / len(urls))
-                
-                result = analyze_tournament(url)
-                if result:
-                    st.session_state.multi_df.append(result)
-                    st.session_state.tournament_names.append(
-                        url.split('/')[-3].replace('-', ' ').title()
-                    )
-            
-            progress_bar.empty()
-            progress_text.empty()
-            
-            if st.session_state.multi_df:
-                st.success(f"Loaded {len(st.session_state.multi_df)} tournaments!")
         
         # Data Export
         st.subheader("💾 Data Export")
@@ -290,16 +243,45 @@ def main():
             )
 
     # ===== MAIN CONTENT =====
-    if st.session_state.df or st.session_state.multi_df:
-        render_hero_analysis()
+    if st.session_state.df:
+        st.header(f"📊 {st.session_state.tournament_name} Analysis")
+        st.metric("Total Matches Analyzed", st.session_state.match_count)
         
-        if st.session_state.df:
-            with st.expander("🔍 Detailed Matchup Analysis"):
-                show_matchup_analysis(st.session_state.df)
+        tab1, tab2, tab3 = st.tabs(["Hero Performance", "Matchups", "Player Stats"])
+        
+        with tab1:
+            plot_hero_performance(st.session_state.df)
+            
+            with st.expander("Detailed Hero Stats"):
+                st.dataframe(
+                    st.session_state.df['3_hero_stats'].sort_values('Win Rate (%)', ascending=False),
+                    use_container_width=True,
+                    height=400
+                )
+        
+        with tab2:
+            plot_matchup_heatmap(st.session_state.df)
+            
+            with st.expander("Matchup Details"):
+                st.dataframe(
+                    st.session_state.df['4_hero_matchups'],
+                    use_container_width=True,
+                    height=400
+                )
+        
+        with tab3:
+            plot_player_performance(st.session_state.df)
+            
+            with st.expander("All Player Stats"):
+                st.dataframe(
+                    st.session_state.df['2_player_stats'].sort_values('Win Rate (%)', ascending=False),
+                    use_container_width=True,
+                    height=400
+                )
     
     # Debug footer
     st.sidebar.markdown("---")
-    st.sidebar.caption(f"v{datetime.now().strftime('%Y.%m.%d')}")
+    st.sidebar.caption(f"v{datetime.now().strftime('%Y.%m.%d')} | Python {sys.version.split()[0]}")
 
 if __name__ == "__main__":
     main()
