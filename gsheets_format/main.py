@@ -34,7 +34,7 @@ def get_tournament_url():
             print("Invalid URL or couldn't connect. Please try again.")
 
 def scrape_round(base_url, round_num):
-    """Scrape match data for a specific round."""
+    """Scrape match data for a specific round including decklist URLs."""
     url = f"{base_url}{round_num}/"
     soup = fetch_page(url)
     if not soup:
@@ -46,10 +46,19 @@ def scrape_round(base_url, round_num):
     for row in match_rows:
         players = row.find_all('div', class_='tournament-coverage__player')
         if len(players) >= 2:
+            # Player 1 data
             p1_name = players[0].find('span').get_text(strip=True)
-            p1_hero = players[0].find('div', class_='tournament-coverage__player-hero-and-deck').get_text(strip=True)
+            p1_hero_div = players[0].find('div', class_='tournament-coverage__player-hero-and-deck')
+            p1_hero = p1_hero_div.get_text(strip=True).replace("View decklist", "").strip()
+            p1_decklist = p1_hero_div.find('a', href=True)
+            p1_decklist_url = f"https://fabtcg.com{p1_decklist['href']}" if p1_decklist else None
+            
+            # Player 2 data
             p2_name = players[1].find('span').get_text(strip=True)
-            p2_hero = players[1].find('div', class_='tournament-coverage__player-hero-and-deck').get_text(strip=True)
+            p2_hero_div = players[1].find('div', class_='tournament-coverage__player-hero-and-deck')
+            p2_hero = p2_hero_div.get_text(strip=True).replace("View decklist", "").strip()
+            p2_decklist = p2_hero_div.find('a', href=True)
+            p2_decklist_url = f"https://fabtcg.com{p2_decklist['href']}" if p2_decklist else None
             
             winner = None
             if 'tournament-coverage__player--winner' in players[0]['class']:
@@ -59,13 +68,46 @@ def scrape_round(base_url, round_num):
             
             matches.append({
                 'Round': f"Round {round_num}",
-                'Player 1 Name': p1_name, 'Player 1 Hero': p1_hero,
-                'Player 2 Name': p2_name, 'Player 2 Hero': p2_hero,
+                'Player 1 Name': p1_name, 'Player 1 Hero': p1_hero, 'Player 1 Decklist': p1_decklist_url,
+                'Player 2 Name': p2_name, 'Player 2 Hero': p2_hero, 'Player 2 Decklist': p2_decklist_url,
                 'Winner': winner,
                 'Winning Hero': p1_hero if winner == p1_name else p2_hero if winner == p2_name else None
             })
     return matches
 
+def extract_decklists(data_frames, base_url):
+    """Extract decklist information and save to separate CSV."""
+    tournament_name = base_url.split('/')[-3].replace('-', ' ').title()
+    decklist_data = []
+    
+    # Process match results to get all players and their decklists
+    for _, row in data_frames['1_match_results'].iterrows():
+        # Player 1
+        decklist_data.append({
+            'player_name': row['Player 1 Name'],
+            'hero': row['Player 1 Hero'],
+            'decklist_url': row['Player 1 Decklist'],
+            'tournament': tournament_name
+        })
+        
+        # Player 2
+        decklist_data.append({
+            'player_name': row['Player 2 Name'],
+            'hero': row['Player 2 Hero'],
+            'decklist_url': row['Player 2 Decklist'],
+            'tournament': tournament_name
+        })
+    
+    # Remove duplicates (same player may appear in multiple rounds)
+    unique_decklists = {}
+    for entry in decklist_data:
+        key = (entry['player_name'], entry['hero'], entry['decklist_url'])
+        unique_decklists[key] = entry
+    
+    # Create DataFrame and save to CSV
+    df = pd.DataFrame(unique_decklists.values())
+    df.to_csv('decklists.csv', index=False)
+    print(f"\nSaved decklist information to 'decklists.csv'")
 
 def fetch_page(url):
     """Fetch webpage and return BeautifulSoup object."""
@@ -247,13 +289,10 @@ def main():
     data_frames = process_data(all_rounds)
     save_to_csv(data_frames, OUTPUT_DIR)
     
+    # Extract and save decklist information
+    extract_decklists(data_frames, BASE_URL)
+    
     print(f"\nAll files saved to '{OUTPUT_DIR}' directory.")
-    print("\nHow to import to Google Sheets:")
-    print("1. Go to sheets.google.com")
-    print("2. Create new spreadsheet")
-    print("3. For each CSV:")
-    print("   - File > Import > Upload")
-    print("   - Select CSV file")
-    print("   - Choose 'Replace spreadsheet'")
+    
 if __name__ == "__main__":
     main()

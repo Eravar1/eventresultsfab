@@ -8,6 +8,9 @@ from concurrent.futures import ThreadPoolExecutor
 import json
 from datetime import datetime
 import sys 
+from bs4 import BeautifulSoup
+import requests
+import streamlit.components.v1 as components
 
 # ============== CONFIGURATION ==============
 st.set_page_config(
@@ -286,8 +289,114 @@ def analyze_tournament(url):
         with st.spinner("Analyzing matches..."):
             return cached_process(all_rounds), tournament_name
 
+
+@st.cache_data(ttl=3600)
+def fetch_decklist(url):
+    """Fetch and parse a decklist page with image URLs."""
+    try:
+        response = requests.get(url)
+        soup = BeautifulSoup(response.text, 'html.parser')
+        
+        def extract_cards(table_soup):
+            cards = []
+            for row in table_soup.find_all('tr')[1:]:
+                link = row.find('a')
+                if link:
+                    card_text = link.get_text(strip=True)
+                    normal_img = link['href']
+                    large_img = link.find('span').find('img')['src'] if link.find('span') else normal_img
+                    quantity = row.get_text(strip=True).split('x')[0].strip()
+                    cards.append({
+                        'text': card_text,
+                        'quantity': quantity,
+                        'normal_img': normal_img,
+                        'large_img': large_img
+                    })
+            return cards
+        
+        # Extract hero/equipment
+        hero_equip = []
+        hero_table = soup.find('th', string='Hero / Weapon / Equipment')
+        if hero_table:
+            hero_equip = extract_cards(hero_table.find_parent('table'))
+        
+        # Extract cards by pitch value
+        deck = {'Hero/Equipment': hero_equip}
+        for pitch in ['0', '1', '2', '3']:
+            pitch_table = soup.find('th', string=f'Pitch {pitch}')
+            if pitch_table:
+                deck[f'Pitch {pitch}'] = extract_cards(pitch_table.find_parent('table'))
+        
+        return deck
+    except Exception as e:
+        st.error(f"Error fetching decklist: {str(e)}")
+        return None
+
+def create_hoverable_card(card):
+    """Generate HTML for a hoverable card with proper escaping."""
+    img_id = card['large_img'].split('/')[-1].replace("'", "")
+    return f"""
+    <div style="position:relative; display:inline-block; margin:5px;">
+        <a href="#" style="text-decoration:none; color:inherit;"
+           onmouseover="document.getElementById('img-{img_id}').style.display='block'"
+           onmouseout="document.getElementById('img-{img_id}').style.display='none'">
+            {card['quantity']} x {card['text']}
+        </a>
+        <img id="img-{img_id}" 
+             src="{card['large_img']}" 
+             style="position:absolute; display:none; z-index:1000; 
+                    width:250px; left:50%; transform:translateX(-50%);
+                    border:2px solid #ddd; border-radius:5px; box-shadow:0 0 10px rgba(0,0,0,0.3);"/>
+    </div>
+    """
+
+def display_decklist(deck):
+    """Display a decklist with hoverable card images."""
+    if not deck:
+        st.warning("No decklist data available")
+        return
+    
+    # Display Hero & Equipment
+    st.subheader("Hero & Equipment")
+    if deck.get('Hero/Equipment'):
+        hero_html = "<div style='line-height:2.0;'>"
+        for card in deck['Hero/Equipment']:
+            hero_html += create_hoverable_card(card)
+        hero_html += "</div>"
+        components.html(hero_html, height=50*len(deck['Hero/Equipment']))
+    else:
+        st.write("No hero/equipment data")
+    
+    # Display cards by pitch value
+    for pitch in ['0', '1', '2', '3']:
+        pitch_key = f'Pitch {pitch}'
+        if pitch_key in deck:
+            st.subheader(f"Pitch {pitch} Cards")
+            cards_html = "<div style='line-height:2.0;'>"
+            for card in deck[pitch_key]:
+                cards_html += create_hoverable_card(card)
+            cards_html += "</div>"
+            components.html(cards_html, height=50*len(deck[pitch_key]))
+
+
 # ============== MAIN APP ==============
 def main():
+
+    st.markdown("""
+    <script>
+        function showCard(imgId) {
+            document.getElementById(imgId).style.display = 'block';
+        }
+        function hideCard(imgId) {
+            document.getElementById(imgId).style.display = 'none';
+        }
+    </script>
+    <style>
+        .hover-card { transition: all 0.3s ease; }
+        .hover-card:hover { color: #4a8bfc; }
+    </style>
+    """, unsafe_allow_html=True)
+        
     st.title("Flesh and Blood GG Tournament Analyzer")
     
     # ===== SIDEBAR CONTROLS =====
@@ -359,10 +468,11 @@ def main():
             )
 
     # ===== MAIN CONTENT =====
-    tab1, tab2, tab3 = st.tabs([
+    tab1, tab2, tab3, tab4 = st.tabs([
         "Single Tournament", 
         "Multi-Tournament Comparison",
-        "Aggregated Analysis"
+        "Aggregated Analysis",
+        "Decklists"
     ])
 
     with tab1:
@@ -396,6 +506,109 @@ def main():
 
     with tab3:
         plot_aggregated_analysis()
+
+    with tab4:
+        st.header("📚 Tournament Decklists")
+        
+        if not st.session_state.df and not st.session_state.multi_df:
+            st.warning("Please analyze a tournament first")
+        else:
+            # Get all decklist data
+            decklist_data = []
+            
+            # Single tournament data
+            if st.session_state.df:
+                df = st.session_state.df['1_match_results']
+                tournament = st.session_state.tournament_name
+                for _, row in df.iterrows():
+                    if row['Player 1 Decklist']:
+                        decklist_data.append({
+                            'Player': row['Player 1 Name'],
+                            'Hero': row['Player 1 Hero'],
+                            'Decklist URL': row['Player 1 Decklist'],
+                            'Tournament': tournament
+                        })
+                    if row['Player 2 Decklist']:
+                        decklist_data.append({
+                            'Player': row['Player 2 Name'],
+                            'Hero': row['Player 2 Hero'],
+                            'Decklist URL': row['Player 2 Decklist'],
+                            'Tournament': tournament
+                        })
+            
+            # Multi-tournament data
+            for df, tournament in zip(st.session_state.multi_df, st.session_state.tournament_names):
+                for _, row in df['1_match_results'].iterrows():
+                    if row['Player 1 Decklist']:
+                        decklist_data.append({
+                            'Player': row['Player 1 Name'],
+                            'Hero': row['Player 1 Hero'],
+                            'Decklist URL': row['Player 1 Decklist'],
+                            'Tournament': tournament
+                        })
+                    if row['Player 2 Decklist']:
+                        decklist_data.append({
+                            'Player': row['Player 2 Name'],
+                            'Hero': row['Player 2 Hero'],
+                            'Decklist URL': row['Player 2 Decklist'],
+                            'Tournament': tournament
+                        })
+            
+            if not decklist_data:
+                st.warning("No decklist data available")
+                return
+            
+            # Remove duplicates
+            unique_decklists = {}
+            for entry in decklist_data:
+                key = (entry['Player'], entry['Hero'], entry['Decklist URL'])
+                unique_decklists[key] = entry
+            decklist_df = pd.DataFrame(unique_decklists.values())
+            
+            # Filter controls
+            col1, col2 = st.columns(2)
+            with col1:
+                tournament_filter = st.multiselect(
+                    "Filter by tournament",
+                    options=decklist_df['Tournament'].unique(),
+                    default=decklist_df['Tournament'].unique()
+                )
+            with col2:
+                hero_filter = st.multiselect(
+                    "Filter by hero",
+                    options=decklist_df['Hero'].unique(),
+                    default=decklist_df['Hero'].unique()
+                )
+            
+            # Apply filters
+            filtered = decklist_df[
+                (decklist_df['Tournament'].isin(tournament_filter)) &
+                (decklist_df['Hero'].isin(hero_filter))
+            ]
+            
+            # Display decklist selector
+            selected_player = st.selectbox(
+                "Select player to view decklist",
+                filtered['Player'].unique()
+            )
+            
+            selected_deck = filtered[filtered['Player'] == selected_player].iloc[0]
+            st.write(f"**Hero:** {selected_deck['Hero']}")
+            st.write(f"**Tournament:** {selected_deck['Tournament']}")
+            
+            # Fetch and display decklist
+            if st.button("View Decklist"):
+                with st.spinner("Loading decklist..."):
+                    deck = fetch_decklist(selected_deck['Decklist URL'])
+                    display_decklist(deck)
+            
+            # Show all available decklists
+            with st.expander("View All Decklists"):
+                st.dataframe(
+                    filtered[['Player', 'Hero', 'Tournament']],
+                    use_container_width=True,
+                    height=400
+                )
 
     # Debug footer
     st.sidebar.markdown("---")
