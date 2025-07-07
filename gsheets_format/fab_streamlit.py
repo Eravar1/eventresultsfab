@@ -74,6 +74,134 @@ def plot_hero_performance(df):
     
     st.plotly_chart(fig, use_container_width=True)
 
+# def plot_matchup_heatmap(df, key_suffix=""):
+#     min_matches = st.slider(
+#         "Minimum matches to display", 
+#         min_value=1, 
+#         max_value=20, 
+#         value=5,
+#         key=f"heatmap_slider_{key_suffix}"
+#     )
+    
+#     filtered = df['4_hero_matchups'][
+#         df['4_hero_matchups']['Total Matches'] >= min_matches
+#     ]
+    
+#     heatmap_data = filtered.pivot_table(
+#         values='Win Rate (%)',
+#         index='Hero',
+#         columns='Opponent Hero',
+#         aggfunc='mean'
+#     )
+    
+#     fig = go.Figure(data=go.Heatmap(
+#         z=heatmap_data.values,
+#         x=heatmap_data.columns,
+#         y=heatmap_data.index,
+#         colorscale='RdBu',
+#         zmid=50,
+#         text=heatmap_data.values.round(1),
+#         hoverinfo="x+y+z"
+#     ))
+    
+#     fig.update_layout(
+#         height=800,
+#         title="Hero Matchup Win Rates (%)",
+#         xaxis_title="Opponent Hero",
+#         yaxis_title="Hero",
+#         margin=dict(l=100, r=50, b=150, t=50)
+#     )
+    
+#     st.plotly_chart(fig, use_container_width=True)
+
+# def plot_matchup_heatmap(df, key_suffix=""):
+#     min_matches = st.slider(
+#         "Minimum matches to display", 
+#         min_value=1, 
+#         max_value=20, 
+#         value=5,
+#         key=f"heatmap_slider_{key_suffix}"
+#     )
+    
+#     filtered = df['4_hero_matchups'][
+#         df['4_hero_matchups']['Total Matches'] >= min_matches
+#     ]
+    
+#     heatmap_data = filtered.pivot_table(
+#         values='Win Rate (%)',
+#         index='Hero',
+#         columns='Opponent Hero',
+#         aggfunc='mean'
+#     )
+    
+#     # Create a container that will allow horizontal scrolling
+#     heatmap_container = st.container()
+    
+#     with heatmap_container:
+#         # Calculate optimal figure size based on number of heroes
+#         num_heroes = max(len(heatmap_data.index), len(heatmap_data.columns))
+#         cell_size = 80  # pixels per cell
+#         fig_width = max(800, num_heroes * cell_size)  # Minimum 800px width
+#         fig_height = max(600, num_heroes * cell_size)  # Minimum 600px height
+        
+#         # Create the figure with dynamic sizing
+#         fig = go.Figure(data=go.Heatmap(
+#             z=heatmap_data.values,
+#             x=heatmap_data.columns,
+#             y=heatmap_data.index,
+#             colorscale='RdBu',
+#             zmid=50,
+#             text=heatmap_data.values.round(1),
+#             texttemplate="%{text}%",  # Show percentage sign
+#             hoverinfo="x+y+z+text",
+#             hoverongaps=False,
+#             textfont={"size": 12, "color": "black"},
+#             showscale=True
+#         ))
+        
+#         # Update layout for better readability
+#         fig.update_layout(
+#             height=fig_height,
+#             width=fig_width,
+#             title="Hero Matchup Win Rates (%)",
+#             xaxis_title="Opponent Hero",
+#             yaxis_title="Hero",
+#             margin=dict(l=100, r=50, b=150, t=50, pad=4),
+#             xaxis=dict(
+#                 tickangle=45,
+#                 side="top",
+#                 tickfont=dict(size=12)
+#             ),
+#             yaxis=dict(
+#                 tickfont=dict(size=12)
+#             )
+#         )
+        
+#         # Configure the color scale
+#         fig.update_traces(
+#             colorbar=dict(
+#                 title=dict(text="Win Rate %", side="right"),
+#                 ticks="outside"
+#             )
+#         )
+        
+#         # Display the figure in a horizontally scrollable container
+#         components.html(
+#             f"""
+#             <div style="width: 100%; overflow-x: auto;">
+#                 {fig.to_html(full_html=False, include_plotlyjs='cdn')}
+#             </div>
+#             """,
+#             height=fig_height + 100  # Add extra space for title/axes
+#         )
+    
+#     # Show raw data in expander
+#     with st.expander("View Matchup Data"):
+#         st.dataframe(
+#             filtered.sort_values('Win Rate (%)', ascending=False),
+#             use_container_width=True,
+#             height=400
+#         )
 def plot_matchup_heatmap(df, key_suffix=""):
     min_matches = st.slider(
         "Minimum matches to display", 
@@ -83,10 +211,14 @@ def plot_matchup_heatmap(df, key_suffix=""):
         key=f"heatmap_slider_{key_suffix}"
     )
     
+    # Filter out blank/empty opponent heroes and matches below threshold
     filtered = df['4_hero_matchups'][
-        df['4_hero_matchups']['Total Matches'] >= min_matches
-    ]
+        (df['4_hero_matchups']['Total Matches'] >= min_matches) &
+        (df['4_hero_matchups']['Opponent Hero'].notna()) &
+        (df['4_hero_matchups']['Opponent Hero'] != '')
+    ].copy()
     
+    # Create pivot table
     heatmap_data = filtered.pivot_table(
         values='Win Rate (%)',
         index='Hero',
@@ -94,25 +226,238 @@ def plot_matchup_heatmap(df, key_suffix=""):
         aggfunc='mean'
     )
     
-    fig = go.Figure(data=go.Heatmap(
-        z=heatmap_data.values,
-        x=heatmap_data.columns,
-        y=heatmap_data.index,
-        colorscale='RdBu',
-        zmid=50,
-        text=heatmap_data.values.round(1),
-        hoverinfo="x+y+z"
-    ))
+    # Replace NaN with None (which will display as blank)
+    heatmap_data = heatmap_data.where(pd.notna(heatmap_data))
+    
+    # Create a container that will allow horizontal scrolling
+    heatmap_container = st.container()
+    
+    with heatmap_container:
+        # Calculate optimal figure size based on number of heroes
+        num_heroes = max(len(heatmap_data.index), len(heatmap_data.columns))
+        cell_size = 80  # pixels per cell
+        fig_width = max(800, num_heroes * cell_size)  # Minimum 800px width
+        fig_height = max(600, num_heroes * cell_size)  # Minimum 600px height
+        
+        # Create the figure with dynamic sizing
+        fig = go.Figure(data=go.Heatmap(
+            z=heatmap_data.values,
+            x=heatmap_data.columns,
+            y=heatmap_data.index,
+            colorscale='RdBu',
+            zmid=50,
+            text=heatmap_data.values.round(1),
+            texttemplate="%{text}%",
+            textfont={"size": 12, "color": "black"},
+            hoverinfo="x+y+z+text",
+            hoverongaps=False,
+            showscale=True,
+            hovertext=[
+                [f"{y} vs {x}: {z}%" if pd.notna(z) else f"{y} vs {x}: No data" 
+                 for x, z in zip(heatmap_data.columns, row)]
+                for y, row in zip(heatmap_data.index, heatmap_data.values)
+            ]
+        ))
+        
+        # Update layout for better readability
+        fig.update_layout(
+            height=fig_height,
+            width=fig_width,
+            title="Hero Matchup Win Rates (%)",
+            xaxis_title="Opponent Hero",
+            yaxis_title="Hero",
+            margin=dict(l=100, r=50, b=150, t=50, pad=4),
+            xaxis=dict(
+                tickangle=45,
+                side="top",
+                tickfont=dict(size=12)
+            ),
+            yaxis=dict(
+                tickfont=dict(size=12)
+            )
+        )
+        
+        # Configure the color scale
+        fig.update_traces(
+            colorbar=dict(
+                title=dict(text="Win Rate %", side="right"),
+                ticks="outside"
+            )
+        )
+        
+        # Display the figure in a horizontally scrollable container
+        components.html(
+            f"""
+            <div style="width: 100%; overflow-x: auto;">
+                {fig.to_html(full_html=False, include_plotlyjs='cdn')}
+            </div>
+            """,
+            height=fig_height + 100  # Add extra space for title/axes
+        )
+    
+    # Show raw data in expander
+    with st.expander("View Matchup Data"):
+        st.dataframe(
+            filtered.sort_values('Win Rate (%)', ascending=False),
+            use_container_width=True,
+            height=400
+        )
+
+
+def plot_top8_conversion(data):
+    """Handle both dictionary of DataFrames (aggregated) and single DataFrame (tournament)"""
+    if isinstance(data, dict):
+        # For aggregated data, we need to combine all tournament DataFrames
+        if '6_top8_conversion' not in data:
+            st.warning("No conversion rate data available")
+            return
+            
+        df = data['6_top8_conversion']
+    else:
+        # For single tournament data
+        df = data
+    
+    # Get the actual conversion rate column name
+    conv_cols = [c for c in df.columns if 'Conversion Rate' in c]
+    if not conv_cols:
+        st.warning("No conversion rate data found in DataFrame")
+        return
+        
+    conv_col = conv_cols[0]
+    round_num = conv_col.split()[1]
+    appear_col = f'Round {round_num} Appearances'
+    
+    st.subheader(f"Round {round_num} Conversion Rates")
+    st.write(f"Percentage of each hero's total registrations that made it to Round {round_num}")
+    
+    top8_df = df.sort_values(conv_col, ascending=False)
+    
+    fig = px.bar(
+        top8_df,
+        x='Hero',
+        y=conv_col,
+        color='Total Registrations',
+        hover_data=['Total Registrations', appear_col],
+        color_continuous_scale='Viridis'
+    )
     
     fig.update_layout(
-        height=800,
-        title="Hero Matchup Win Rates (%)",
-        xaxis_title="Opponent Hero",
-        yaxis_title="Hero",
-        margin=dict(l=100, r=50, b=150, t=50)
+        height=600,
+        xaxis_title="Hero",
+        yaxis_title=f"Conversion Rate (%) - Round {round_num}",
+        margin=dict(l=50, r=50, b=150, t=50)
     )
     
     st.plotly_chart(fig, use_container_width=True)
+    
+    with st.expander("View Raw Data"):
+        st.dataframe(top8_df, use_container_width=True)
+                    
+def plot_tournament_top8_comparison():
+    """Plot comparison of conversion rates across tournaments, using each tournament's own round structure."""
+    if len(st.session_state.multi_df) < 1:
+        st.warning("Add at least 1 tournament to enable comparison")
+        return
+    
+    # Combine top8 data from all tournaments
+    all_top8 = []
+    for df, name in zip(st.session_state.multi_df, st.session_state.tournament_names):
+        if '6_top8_conversion' in df and not df['6_top8_conversion'].empty:
+            tournament_df = df['6_top8_conversion'].copy()
+            
+            # Find the conversion rate column for this tournament
+            conv_cols = [c for c in tournament_df.columns if 'Conversion Rate' in c]
+            if not conv_cols:
+                continue
+            conv_col = conv_cols[0]
+            
+            # Standardize the column names for comparison
+            tournament_df['Conversion Rate'] = tournament_df[conv_col]
+            tournament_df['Tournament'] = name
+            tournament_df['Target Round'] = tournament_df.get('Target Round', '?')
+            
+            all_top8.append(tournament_df)
+    
+    if not all_top8:
+        st.warning("No conversion rate data available")
+        return
+    
+    combined = pd.concat(all_top8)
+    
+    # Show which rounds were used for each tournament
+    st.write("**Rounds used for conversion calculation:**")
+    round_info = combined[['Tournament', 'Target Round']].drop_duplicates()
+    st.dataframe(round_info, hide_index=True, use_container_width=True)
+    
+    # Filter heroes with minimum registrations across tournaments
+    min_registrations = st.slider(
+        "Minimum total registrations (across all tournaments) to include", 
+        min_value=1, 
+        max_value=50, 
+        value=10
+    )
+    
+    hero_totals = combined.groupby('Hero')['Total Registrations'].sum()
+    valid_heroes = hero_totals[hero_totals >= min_registrations].index
+    filtered = combined[combined['Hero'].isin(valid_heroes)]
+    
+    # Plot comparison
+    st.subheader("Tournament-by-Tournament Conversion Rates")
+    st.caption("Note: Each tournament uses its own 3rd-to-last round for conversion calculation")
+    
+    # Option 1: Faceted bar chart
+    tab1, tab2, tab3 = st.tabs(["Faceted View", "Box Plot", "Line Chart"])
+    
+    with tab1:
+        fig = px.bar(
+            filtered.sort_values('Conversion Rate', ascending=False),
+            x='Hero',
+            y='Conversion Rate',
+            color='Tournament',
+            barmode='group',
+            facet_col='Tournament',
+            facet_col_wrap=3,
+            height=800,
+            title="Conversion Rates by Tournament"
+        )
+        fig.update_xaxes(tickangle=45)
+        st.plotly_chart(fig, use_container_width=True)
+    
+    with tab2:
+        fig = px.box(
+            filtered,
+            x='Hero',
+            y='Conversion Rate',
+            color='Hero',
+            points="all",
+            hover_data=['Tournament', 'Total Registrations', 'Target Round'],
+            title="Distribution of Conversion Rates by Hero"
+        )
+        fig.update_layout(showlegend=False)
+        st.plotly_chart(fig, use_container_width=True)
+    
+    with tab3:
+        fig = px.line(
+            filtered,
+            x='Tournament',
+            y='Conversion Rate',
+            color='Hero',
+            markers=True,
+            hover_data=['Total Registrations', 'Target Round'],
+            title="Conversion Rate Trends Across Tournaments"
+        )
+        fig.update_layout(xaxis_tickangle=45)
+        st.plotly_chart(fig, use_container_width=True)
+    
+    # Show raw data
+    with st.expander("View Raw Tournament-by-Tournament Data"):
+        st.dataframe(
+            filtered.sort_values(['Tournament', 'Conversion Rate'], ascending=[True, False]),
+            use_container_width=True,
+            height=400
+        )
+    
+    return filtered
 
 def plot_player_performance(df):
     player_stats = df['2_player_stats'].sort_values('Win Rate (%)', ascending=False).head(20)
@@ -198,6 +543,10 @@ def plot_aggregated_analysis():
         df['1_match_results'].assign(Tournament=name)
         for df, name in zip(st.session_state.multi_df, st.session_state.tournament_names)
     ])
+
+        # Process the aggregated data
+    with st.spinner("Processing aggregated data..."):
+        aggregated_data = process_data(all_matches.to_dict('records'))
     
     # Combine all hero stats
     all_hero_stats = pd.concat([
@@ -229,7 +578,7 @@ def plot_aggregated_analysis():
         st.metric("Unique Heroes", unique_heroes)
     
     # Create tabs for different views
-    tab1, tab2, tab3 = st.tabs(["Hero Performance", "Matchups", "Player Stats"])
+    tab1, tab2, tab3, tab4, tab5 = st.tabs(["Hero Performance", "Matchups", "Player Stats", "Top 8 Conversion", "Tournament Comparison"])
     
     with tab1:
         plot_hero_performance(aggregated_data)
@@ -257,6 +606,11 @@ def plot_aggregated_analysis():
                 use_container_width=True,
                 height=400
             )
+    with tab4:
+        plot_top8_conversion(aggregated_data)
+
+    with tab5:
+        plot_tournament_top8_comparison()
 
 # ============== CORE FUNCTIONS ==============
 def analyze_tournament(url):
@@ -420,9 +774,41 @@ def main():
                 st.success("Analysis complete!")
         
         # Multi-Tournament Comparison
+        default_values = """https://fabtcg.com/en/coverage/national-championship-2025-brunei/results/
+https://fabtcg.com/en/coverage/national-championship-2025-canada/results/
+https://fabtcg.com/en/coverage/national-championship-2025-denmark/results/
+https://fabtcg.com/en/coverage/national-championship-2025-czechia/results/
+https://fabtcg.com/en/coverage/national-championship-2025-germany-main-event/results/
+https://fabtcg.com/en/coverage/national-championship-2025-iceland/results/
+https://fabtcg.com/en/coverage/national-championship-2025-romania/results/
+https://fabtcg.com/en/coverage/national-championship-2025-slovenia/results/
+https://fabtcg.com/en/coverage/national-championship-2025-switzerland/results/
+https://fabtcg.com/en/coverage/national-championship-2025-thailand/results/
+https://fabtcg.com/en/coverage/national-championship-2025-taiwan/results/
+https://fabtcg.com/en/coverage/national-championship-2025-australia/results/
+https://fabtcg.com/en/coverage/national-championship-2025-austria/results/
+https://fabtcg.com/en/coverage/national-championship-2025-estonia/results/
+https://fabtcg.com/en/coverage/national-championship-2025-finland/results/
+https://fabtcg.com/en/coverage/national-championship-2025-greece/results/
+https://fabtcg.com/en/coverage/national-championship-2025-hungary/results/
+https://fabtcg.com/en/coverage/national-championship-2025-hong-kong-region/results/
+https://fabtcg.com/en/coverage/national-championship-2025-ireland/results/
+https://fabtcg.com/en/coverage/national-championship-2025-italy/results/
+https://fabtcg.com/en/coverage/national-championship-2025-japan/results/
+https://fabtcg.com/en/coverage/national-championship-2025-latvia/results/
+https://fabtcg.com/en/coverage/national-championship-2025-malaysia/results/
+https://fabtcg.com/en/coverage/national-championship-2025-mexico/results/
+https://fabtcg.com/en/coverage/national-championship-2025-norway/results/
+https://fabtcg.com/en/coverage/national-championship-2025-philippines/results/
+https://fabtcg.com/en/coverage/national-championship-2025-poland/results/
+https://fabtcg.com/en/coverage/national-championship-2025-portugal/results/
+https://fabtcg.com/en/coverage/national-championship-2025-south-korea/results/
+https://fabtcg.com/en/coverage/national-championship-2025-spain/results/
+https://fabtcg.com/en/coverage/national-championship-2025-sweden/results/"""
         st.subheader("Multi-Tournament")
         multi_urls = st.text_area(
             "Enter URLs (one per line):",
+            value=default_values,
             height=100,
             key="multi_urls"
         )
@@ -565,33 +951,45 @@ def main():
                 unique_decklists[key] = entry
             decklist_df = pd.DataFrame(unique_decklists.values())
             
-            # Filter controls
-            col1, col2 = st.columns(2)
-            with col1:
-                tournament_filter = st.multiselect(
-                    "Filter by tournament",
-                    options=decklist_df['Tournament'].unique(),
-                    default=decklist_df['Tournament'].unique()
-                )
-            with col2:
-                hero_filter = st.multiselect(
-                    "Filter by hero",
-                    options=decklist_df['Hero'].unique(),
-                    default=decklist_df['Hero'].unique()
-                )
+            # Improved tournament filtering with search
+            st.write("**Filter tournaments:**")
+            
+            # Create a searchable multiselect
+            all_tournaments = sorted(decklist_df['Tournament'].unique())
+            selected_tournaments = st.multiselect(
+                "Select tournaments (searchable)",
+                options=all_tournaments,
+                default=all_tournaments[:10],  # Show first 10 by default
+                key="tournament_filter",
+                help="Start typing to search through all available tournaments"
+            )
+            
+            # Hero filter remains the same
+            st.write("**Filter heroes:**")
+            all_heroes = sorted(decklist_df['Hero'].unique())
+            selected_heroes = st.multiselect(
+                "Select heroes",
+                options=all_heroes,
+                default=all_heroes,
+                key="hero_filter"
+            )
             
             # Apply filters
             filtered = decklist_df[
-                (decklist_df['Tournament'].isin(tournament_filter)) &
-                (decklist_df['Hero'].isin(hero_filter))
+                (decklist_df['Tournament'].isin(selected_tournaments)) &
+                (decklist_df['Hero'].isin(selected_heroes))
             ]
             
-            # Display decklist selector
+            # Display player selector with search
+            st.write("**Select player to view decklist:**")
             selected_player = st.selectbox(
-                "Select player to view decklist",
-                filtered['Player'].unique()
+                "Player",
+                options=sorted(filtered['Player'].unique()),
+                index=0,
+                key="player_selector"
             )
             
+            # Display selected deck info
             selected_deck = filtered[filtered['Player'] == selected_player].iloc[0]
             st.write(f"**Hero:** {selected_deck['Hero']}")
             st.write(f"**Tournament:** {selected_deck['Tournament']}")
@@ -602,15 +1000,28 @@ def main():
                     deck = fetch_decklist(selected_deck['Decklist URL'])
                     display_decklist(deck)
             
-            # Show all available decklists
-            with st.expander("View All Decklists"):
-                st.dataframe(
-                    filtered[['Player', 'Hero', 'Tournament']],
-                    use_container_width=True,
-                    height=400
-                )
-
-    # Debug footer
+            # Show all available decklists with pagination
+            st.write(f"**Available decklists ({len(filtered)} total):**")
+            
+            # Add pagination
+            page_size = 20
+            page_number = st.number_input(
+                "Page number", 
+                min_value=1, 
+                max_value=len(filtered)//page_size + 1, 
+                value=1
+            )
+            
+            start_idx = (page_number - 1) * page_size
+            end_idx = start_idx + page_size
+            
+            st.dataframe(
+                filtered[['Player', 'Hero', 'Tournament']].iloc[start_idx:end_idx],
+                use_container_width=True,
+                height=min(400, page_size * 35)  # Adjust height based on page size
+            )
+            
+        # Debug footer
     st.sidebar.markdown("---")
     st.sidebar.caption(f"v{datetime.now().strftime('%Y.%m.%d')} | Python {sys.version.split()[0]}")
 

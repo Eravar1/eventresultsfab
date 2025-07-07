@@ -114,6 +114,103 @@ def fetch_page(url):
     response = requests.get(url)
     return BeautifulSoup(response.text, 'html.parser') if response.status_code == 200 else None
 
+
+# def calculate_top8_conversion(matches, tournament_name=None):
+#     """Calculate top 8 conversion rates for heroes.
+#     Args:
+#         matches: List of match dictionaries
+#         tournament_name: If provided, will include in the results for per-tournament tracking
+#     Returns:
+#         DataFrame with conversion rates
+#     """
+#     # Get all unique heroes in the tournament
+#     hero_registrations = defaultdict(int)
+#     hero_top8_appearances = defaultdict(int)
+    
+#     # Identify the final 3 rounds (assuming they're the highest numbered rounds)
+#     round_numbers = sorted({int(match['Round'].split()[1]) for match in matches})
+#     final_rounds = round_numbers[-3:] if len(round_numbers) >= 3 else round_numbers
+    
+#     for match in matches:
+#         p1_hero = match['Player 1 Hero']
+#         p2_hero = match['Player 2 Hero']
+        
+#         # Count all hero registrations
+#         hero_registrations[p1_hero] += 1
+#         hero_registrations[p2_hero] += 1
+        
+#         # Check if this match is in the final rounds
+#         round_num = int(match['Round'].split()[1])
+#         if round_num in final_rounds:
+#             hero_top8_appearances[p1_hero] += 1
+#             hero_top8_appearances[p2_hero] += 1
+    
+#     # Calculate conversion rates
+#     conversion_rates = []
+#     for hero, total in hero_registrations.items():
+#         top8 = hero_top8_appearances.get(hero, 0)
+#         rate = (top8 / total) * 100 if total > 0 else 0
+#         entry = {
+#             'Hero': hero,
+#             'Total Registrations': total,
+#             'Top 8 Appearances': top8,
+#             'Top 8 Conversion Rate (%)': round(rate, 2)
+#         }
+#         if tournament_name:
+#             entry['Tournament'] = tournament_name
+#         conversion_rates.append(entry)
+    
+#     return pd.DataFrame(conversion_rates).sort_values('Top 8 Conversion Rate (%)', ascending=False)
+
+def calculate_top8_conversion(matches, tournament_name=None):
+    """Calculate conversion rates for the 3rd-to-last round of the tournament."""
+    if not matches:
+        return pd.DataFrame()
+
+    # Get all unique round numbers for this tournament
+    round_numbers = sorted({int(match['Round'].split()[1]) for match in matches})
+    
+    # Identify the 3rd-from-last round (or earliest round if fewer than 3 rounds)
+    target_round = round_numbers[-3] if len(round_numbers) >= 3 else round_numbers[0] if round_numbers else None
+    
+    if target_round is None:
+        return pd.DataFrame()
+
+    hero_registrations = defaultdict(int)
+    hero_target_round_appearances = defaultdict(int)
+    
+    for match in matches:
+        p1_hero = match['Player 1 Hero']
+        p2_hero = match['Player 2 Hero']
+        
+        # Count all hero registrations (count each hero once per match they appear in)
+        hero_registrations[p1_hero] += 1
+        hero_registrations[p2_hero] += 1
+        
+        # Check if this match is in our target round
+        round_num = int(match['Round'].split()[1])
+        if round_num == target_round:
+            hero_target_round_appearances[p1_hero] += 1
+            hero_target_round_appearances[p2_hero] += 1
+    
+    # Calculate conversion rates
+    conversion_rates = []
+    for hero, total in hero_registrations.items():
+        target_round_appearances = hero_target_round_appearances.get(hero, 0)
+        rate = (target_round_appearances / total) * 100 if total > 0 else 0
+        entry = {
+            'Hero': hero,
+            'Total Registrations': total,
+            f'Round {target_round} Appearances': target_round_appearances,
+            f'Round {target_round} Conversion Rate (%)': round(rate, 2),
+            'Target Round': target_round
+        }
+        if tournament_name:
+            entry['Tournament'] = tournament_name
+        conversion_rates.append(entry)
+    
+    return pd.DataFrame(conversion_rates).sort_values(f'Round {target_round} Conversion Rate (%)', ascending=False)
+
 # def scrape_round(round_num):
 #     """Scrape match data for a specific round."""
 #     soup = fetch_page(BASE_URL.format(round_num))
@@ -144,7 +241,7 @@ def fetch_page(url):
 #             })
 #     return matches
 
-def process_data(matches):
+def process_data(matches, tournament_name=None):
     """Process all tournament data and return organized DataFrames."""
     # Initialize data structures
     player_stats = defaultdict(lambda: {'wins': 0, 'losses': 0, 'heroes_used': set()})
@@ -231,12 +328,15 @@ def process_data(matches):
     
     player_details_df = pd.DataFrame(all_player_details)
     
+    top8_conversion_df = calculate_top8_conversion(all_matches, tournament_name)
+    
     return {
         '1_match_results': match_results_df,
         '2_player_stats': player_stats_df,
         '3_hero_stats': hero_stats_df,
         '4_hero_matchups': hero_matchups_df,
-        '5_player_details': player_details_df
+        '5_player_details': player_details_df,
+        '6_top8_conversion': calculate_top8_conversion(all_matches, tournament_name)
     }
 
 def save_to_csv(data_frames, output_dir):
@@ -293,6 +393,6 @@ def main():
     extract_decklists(data_frames, BASE_URL)
     
     print(f"\nAll files saved to '{OUTPUT_DIR}' directory.")
-    
+
 if __name__ == "__main__":
     main()
